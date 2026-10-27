@@ -1,0 +1,83 @@
+name: Trading ML Analytics CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  static-and-lint:
+    name: Static Syntax Analysis & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Static Python Syntax Check
+        run: |
+          python -m py_compile manage.py
+          python -m py_compile trading_analytics/*.py
+          python -m py_compile apps/trades/*.py
+          python -m py_compile apps/analytics/*.py
+          python -m py_compile ml/*.py
+
+  backend-tests:
+    name: Backend Pytest Suite (Coverage >= 85%)
+    runs-on: ubuntu-latest
+    needs: [ static-and-lint ]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Django Migrations
+        env:
+          DJANGO_SECRET_KEY: ci-test-secret-key-32-chars-long-minimum!
+          DJANGO_DEBUG: "0"
+        run: |
+          python manage.py migrate
+
+      - name: Run Deterministic Pytest Suite with Coverage
+        env:
+          DJANGO_SECRET_KEY: ci-test-secret-key-32-chars-long-minimum!
+          DJANGO_DEBUG: "0"
+        run: |
+          pytest -v --cov=apps --cov=ml --cov-report=term-missing --cov-report=xml --cov-fail-under=85
+
+  frontend-build:
+    name: Frontend React Vite Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: |
+          npm install
+
+      - name: Build Production Frontend Assets
+        working-directory: frontend
+        run: |
+          npm run build
